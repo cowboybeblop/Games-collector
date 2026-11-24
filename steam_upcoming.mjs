@@ -108,12 +108,19 @@ function parsePage(html) {
   const desc =
     /class="game_description_snippet">\s*([\s\S]*?)\s*<\/div>/.exec(html)?.[1] ??
     /<meta name="description" content="([^"]*)"/.exec(html)?.[1] ?? "";
-  const langTable = /<table class="game_language_options">([\s\S]*?)<\/table>/.exec(html)?.[1] ?? "";
+  const langTable = /<table\s+class="game_language_options"[^>]*>([\s\S]*?)<\/table>/.exec(html)?.[1] ?? "";
   const links = (s) => all(s, /<a[^>]*>([^<]+)<\/a>/g);
   const devs = links(/id="developers_list"[^>]*>([\s\S]*?)<\/div>/.exec(html)?.[1] ?? "");
-  const pubs = links(/<b>Publisher:<\/b>[\s\S]*?<div class="summary column">([\s\S]*?)<\/div>/.exec(html)?.[1] ?? "");
+  const pubs = links(/Publisher:<\/div>\s*<div class="summary column">([\s\S]*?)<\/div>/.exec(html)?.[1] ?? "");
   const site = /linkfilter\/\?u=([^"&]+)[^>]*>\s*Visit the website/.exec(html)?.[1];
-  const shots = uniq(html.match(/https:\/\/[^"'\s]*\/ss_[0-9a-f]+\.(?:1920x1080|600x338)\.jpg/g) ?? []).slice(0, 4);
+  // Captures et trailers sont dans du JSON échappé (&quot; et \/) : on le "déséchappe" d'abord.
+  const dec = html.replace(/&quot;/g, '"').replace(/\\\//g, "/");
+  const best = new Map(); // hash -> { w, url } (on garde la plus grande taille)
+  for (const m of dec.matchAll(/https:\/\/[^"\s]+\/ss_([0-9a-f]+)\.(\d+)x\d+\.jpg(?:\?t=\d+)?/g)) {
+    const w = Number(m[2]);
+    if (!best.has(m[1]) || w > best.get(m[1]).w) best.set(m[1], { w, url: m[0] });
+  }
+  const shots = [...best.values()].slice(0, 4).map((x) => x.url);
   return {
     fetched: nowIso(),
     title: decode(/<div id="appHubAppName"[^>]*>([^<]*)</.exec(html)?.[1] ?? ""),
@@ -127,7 +134,8 @@ function parsePage(html) {
     languages: all(langTable, /<tr[^>]*>\s*<td[^>]*>\s*([^<\s][^<]*?)\s*<\/td>/g),
     website: site ? decodeURIComponent(site) : "",
     screenshots: shots,
-    trailer: /data-mp4-hd-source="([^"]+)"/.exec(html)?.[1] ?? /data-mp4-source="([^"]+)"/.exec(html)?.[1] ?? "",
+    trailer: /"hlsManifest":"([^"]+)"/.exec(dec)?.[1] ?? "",
+    trailer_dash: /"dashManifests":\["([^"]+)"/.exec(dec)?.[1] ?? "",
   };
 }
 
