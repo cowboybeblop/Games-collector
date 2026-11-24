@@ -1,0 +1,43 @@
+name: Steam upcoming
+on:
+  schedule:
+    - cron: "17 4 * * *"   # tous les jours ~5h/6h heure de Paris
+  workflow_dispatch:
+    inputs:
+      test:
+        description: "Test de vitesse (n'écrit aucun fichier)"
+        type: boolean
+        default: false
+      delay_ms:
+        description: "Pause entre deux pages (ms)"
+        type: string
+        default: "1000"
+permissions:
+  contents: write
+concurrency:
+  group: steam-upcoming
+  cancel-in-progress: false
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    env:
+      MAX_MINUTES: "320"
+      TEST: ${{ inputs.test }}
+      DELAY_MS: ${{ inputs.delay_ms || '1000' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node steam_upcoming.mjs
+      - name: Commit
+        if: ${{ always() && inputs.test != true }}
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          for f in details.json upcoming.json upcoming-light.json upcoming.csv; do
+            [ -f "$f" ] && git add "$f"
+          done
+          git diff --cached --quiet || git commit -m "Update Steam upcoming"
+          git push
