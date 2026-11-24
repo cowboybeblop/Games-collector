@@ -121,7 +121,7 @@ function parsePage(html) {
     if (!best.has(m[1]) || w > best.get(m[1]).w) best.set(m[1], { w, url: m[0] });
   }
   const shots = [...best.values()].slice(0, 4).map((x) => x.url);
-  return {
+  const out = {
     fetched: nowIso(),
     title: decode(/<div id="appHubAppName"[^>]*>([^<]*)</.exec(html)?.[1] ?? ""),
     short_description: stripTags(desc),
@@ -137,6 +137,10 @@ function parsePage(html) {
     trailer: /"hlsManifest":"([^"]+)"/.exec(dec)?.[1] ?? "",
     trailer_dash: /"dashManifests":\["([^"]+)"/.exec(dec)?.[1] ?? "",
   };
+  // IMPORTANT : les chaînes extraites par regex restent "accrochées" à la page HTML entière
+  // (100-500 Ko chacune) tant qu'on ne les copie pas -> fuite mémoire sur 10 000+ jeux.
+  // JSON.parse(JSON.stringify(...)) crée des chaînes indépendantes et libère le HTML.
+  return JSON.parse(JSON.stringify(out));
 }
 
 async function fetchPage(appid) {
@@ -258,9 +262,10 @@ for (const id of queue) {
     console.warn(e.message);
     if (++fails >= 5) { console.warn("Trop d'échecs d'affilée (blocage ?), arrêt propre."); break; }
   }
-  if (++done % 50 === 0) {
+  if (++done % 250 === 0) {
     writeFileSync("details.json", JSON.stringify(cache));
-    console.log(`Fiches : ${done}/${queue.length}`);
+    const mb = Math.round(process.memoryUsage().heapUsed / 1048576);
+    console.log(`Fiches : ${done}/${queue.length} (mémoire ${mb} Mo)`);
   }
   await sleep(DELAY_MS);
 }
